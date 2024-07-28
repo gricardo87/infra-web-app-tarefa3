@@ -1,73 +1,189 @@
-# Infraestrutura para Aplicação Web da Acme SA
+# Receitas
 
-Este projeto demonstra a criação e configuração de uma infraestrutura para uma aplicação web utilizando Terraform e Ansible. A infraestrutura consiste em uma rede virtual, subnet, VMs, e as configurações necessárias para suportar os requisitos da aplicação.
+## Comandos que ajudam
 
-## Visão Geral do Projeto
+```shell
+# cria arquivo de configuração
+ansible-config init --disable > ansible.cfg
 
-O objetivo deste projeto é criar e configurar uma infraestrutura para a aplicação web da Acme SA. A infraestrutura inclui os seguintes componentes e configurações:
+# executa modulo ping
+ansible myhosts -m ping -i inventory.yml
 
-### Terraform
+# executa playbook especifico
+ansible-playbook facts.yaml -i inventory.yml
 
-- **Rede Virtual (VNet)**
-  - Nome: `acme-vnet`
-  - Espaço de Endereçamento: `10.0.0.0/16`
-  
-- **Subnet**
-  - Nome: `acme-subnet`
-  - Espaço de Endereçamento: `10.0.10.0/24`
-  
-- **Máquinas Virtuais**
-  - `acmeVM1`
-    - Usuário administrador: `acmeadmin`
-    - IP público anexado
-    - Acessível via SSH (porta 22)
-    - Acessível via HTTP (porta 80)
-  - `acmeVM2`
-    - Usuário administrador: `acmeadmin`
-    - IP público anexado
-    - Acessível via SSH (porta 22)
+# adiciona variáveis extras
+ansible-playbook facts.yaml -i inventory.yml --extra-vars "{\"ansible_user\":\"azureadmin\"}"
+```
 
-- **Chave SSH**
-  - As duas VMs serão acessíveis através de uma mesma chave privada.
+## Configuração
 
-- **Arquivo de Inventário Ansible**
-  - Ao final do provisionamento das VMs, um arquivo de inventário Ansible será gerado com a `acmeVM1` no grupo `web` e a `acmeVM2` no grupo `db`.
+Arquivo ansible.cfg pode se encontrar no diretório local onde o comando `ansible`
+vai rodar, pode estar dentro do diretório (linux) `/etc/ansible`.
 
-### Ansible
+Exemplo de configuração da chave SSH:
 
-- **Configuração do Grupo `web`**
-  - Instalação do pacote `nginx`
-  - Habilitação e inicialização do serviço `nginx`
-  - Criação do arquivo `index.html` em `/var/www/html/` com o conteúdo da variável `ansible_hostname`
-  - O arquivo `index.html` terá permissões 0644, proprietário `root` e grupo `root`.
+```ini
+[defaults]
+private_key_file=minhachaveprivada.pem
+host_key_checking=False
+```
 
-- **Configuração do Grupo `db`**
-  - Instalação do pacote `postgres`
-  - Habilitação e inicialização do serviço `postgres`
+Pode também passar a chave privada usado argumento na linha de command:
 
-- **Configuração Comum a Todos os Grupos**
-  - Criação do usuário `acmeuser` com diretório home e senha `aulapuc1234`
+```shell
+ansible --private-key minhachaveprivada.pem ......
+```
 
-### Datadog
+## Inventário
 
-- **Instalação do Agente Datadog**
-  - O agente da Datadog será instalado e habilitado em todas as VMs.
+Exemplo para executar módulos na máquina local, use invetário abaixo:
 
-## Estrutura do Projeto
+```ini
+[all]
+localhost   ansible_connection=local
+```
 
-- `main.tf`: Arquivo principal do Terraform para definir a infraestrutura.
-- `ansible/`: Diretório contendo os playbooks Ansible.
-  - `configure.yml`: Playbook principal para configuração das VMs.
-  - `datadog.yml`: Playbook para configuração do agent do Datadog.
-- `inventory.ini`: Arquivo de inventário Ansible gerado ao final do provisionamento.
+Exemplo simples:
 
-## Como Executar
+```ini
+[web]
+web1.example.com
+web2.example.com
 
-1. Clone este repositório.
-2. Configure as credenciais necessárias para provisionar a infraestrutura no provedor de nuvem (de preferencia variaveis de ambiente).
-3. Execute `terraform init` e `terraform apply` para criar a infraestrutura.
-4. Após o provisionamento, navegue até o diretório `ansible/` e execute `ansible-playbook -i inventory.ini configure.yml datadog.yml` para configurar as VMs.
+[db]
+db1.example.com
+db2.example.com
+db3.example.com
+```
 
-## Conclusão
+Exemplo com regex:
 
-Este projeto demonstra a criação e configuração de uma infraestrutura completa para uma aplicação web utilizando Terraform e Ansible, seguindo as melhores práticas e garantindo uma configuração consistente e reproduzível.
+```ini
+[web]
+web[1:10].example.com
+
+[db]
+db[1:3].example.com
+```
+
+Exemplo Yaml:
+
+```yaml
+web:
+  hosts:
+    web1.example.com:
+    web2.example.com:
+db:
+  hosts:
+    db1.example.com:
+    db2.example.com:
+    db2.example.com:
+linux:
+  children:
+    web:
+    db:
+```
+
+## Arquivos de variáveis
+
+As variáveis tem precedências e precisam de muito cuidado pois pode trazer uma
+complexidade muito grande.
+
+```yaml
+---
+ansible_user: azureadmin
+administrator: tmoreira
+idioma: pt_BR
+curso: IAC
+```
+
+Veja sempre a ordem de precedência para não se perder em variáveis.
+
+## Playbooks
+
+Playbooks são tarefas que são executadas em um ou mais hosts.
+
+```yaml
+- hosts: myhosts
+  become: yes
+  tasks:
+    - name: instala Nginx
+      apt: name=nginx state=latest
+```
+
+Melhorando o script acima:
+
+```yaml
+- hosts: myhosts
+  become: yes
+  tasks:
+    - name: atualiza cache
+      apt: update_cache=yes
+
+    - name: instala Nginx
+      apt: name=nginx state=latest
+```
+
+Podemos melhorar ainda mais...
+
+```yaml
+- hosts: myhosts
+  become: yes
+  tasks:
+    - name: atualiza cache
+      apt: update_cache=yes
+
+    - name: instala Nginx
+      apt: name=nginx state=latest
+
+      notify:
+        - reinicia nginx
+
+  handlers:
+    - name: reinicia nginx
+      service: name=nginx state=reloaded
+```
+
+Adicionando um template:
+
+```yaml
+- name: Cria arquivo "index.html" com conteudo template
+  template:
+    src: "nginx.html.j2"
+    dest: /var/www/html/index.html
+    mode: 0644
+```
+
+Dica pra ir mais rápido:
+
+```yaml
+- hosts: myhosts
+  gather_facts: false
+```
+
+Condicionais:
+
+```yaml
+- name: inclui tarefa se a variável hostvar estiver definida
+  ansible.builtin.include_tasks: "{{ hostvar }}.yaml"
+  when: hostvar is defined
+```
+
+Lista de items:
+
+```yaml
+- name: instale meus pacotes essenciais
+  ansible.builtin.apt:
+    pkg:
+      - neovim
+      - nginx
+      - python3-devel
+```
+
+### Referências
+
+[Módulo APT](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html)
+[Módulo DNF](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/dnf_module.html#ansible-collections-ansible-builtin-dnf-module)
+
+## Roles (reusabilidade)

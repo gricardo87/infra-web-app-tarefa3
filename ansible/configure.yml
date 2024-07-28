@@ -1,0 +1,65 @@
+---
+- name: Configure VMs
+  hosts: web
+  become: true
+
+  tasks:
+    - name: Create acmeuser with home directory and set password
+      user:
+        name: acmeuser
+        password: "{{ 'aulapuc1234' | password_hash('sha512', 65534 | random(seed=inventory_hostname) | string ) }}"
+        createhome: yes
+
+    - name: Install nginx on web group and start service
+      become: true
+      package:
+        name: nginx
+        state: present
+      when: "'web' in group_names"
+      notify:
+        - Start nginx
+
+    - name: Create index.html with ansible_hostname content
+      vars:
+        idioma: pt-br
+      become: true
+      template:
+        src: nginx.html.j2
+        dest: /var/www/html/index.html
+        owner: root
+        group: root
+        mode: '0644'
+      when: "'web' in group_names"
+
+  handlers:
+    - name: Start nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+- name: Configure VMs DB
+  hosts: db
+  become: true
+
+  tasks:
+    - name: Create acmeuser with home directory and set password
+      user:
+        name: acmeuser
+        password: "{{ 'aulapuc1234' | password_hash('sha512', 65534 | random(seed=inventory_hostname) | string ) }}"
+        createhome: yes
+
+    - name: Install PostgreSQL on db group and start service
+      become: true
+      package:
+        name: postgresql
+        state: present
+      when: "'db' in group_names"
+      notify:
+        - Start PostgreSQL
+
+  handlers:
+    - name: Start PostgreSQL
+      systemd:
+        name: postgresql
+        state: started
+        enabled: yes
